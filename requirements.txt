@@ -1,0 +1,7 @@
+torch
+numpy
+pandas
+scikit-learn
+pymoo>=0.6
+pytest
+Pillow

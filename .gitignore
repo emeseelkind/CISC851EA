@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+cache/
+logs/
+experiments/*
+!experiments/.gitkeep
+*.pt
+*.ckpt
+.pytest_cache/
+wandb/
