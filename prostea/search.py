@@ -33,7 +33,7 @@ def problem_vars():
     }
 
 
-def _make_problem(cache, inner_folds, device, epochs, max_oop_activation):
+def _make_problem(cache, inner_folds, device, epochs, max_oop_activation, model_builder=None, lr=1e-2):
     from pymoo.core.problem import ElementwiseProblem
 
     class LossSearchProblem(ElementwiseProblem):
@@ -43,7 +43,8 @@ def _make_problem(cache, inner_folds, device, epochs, max_oop_activation):
         def _evaluate(self, x, out, *args, **kwargs):
             genome = decode(x)
             metrics = evaluate_genome_nested(
-                genome, cache, inner_folds, device=device, epochs=epochs
+                genome, cache, inner_folds, device=device, epochs=epochs,
+                model_builder=model_builder, lr=lr,
             )
             cspca = metrics["auc_cspca_max"]
             loc = metrics["localization_consistency"]
@@ -72,6 +73,8 @@ def run_search(
     max_oop_activation: float = 0.15,
     seed: int = 1,
     verbose: bool = True,
+    model_builder=None,
+    lr: float = 1e-2,
 ):
     from pymoo.algorithms.moo.nsga2 import NSGA2
     from pymoo.core.mixed import (
@@ -81,7 +84,8 @@ def run_search(
     )
     from pymoo.optimize import minimize
 
-    problem = _make_problem(cache, inner_folds, device, epochs, max_oop_activation)
+    problem = _make_problem(cache, inner_folds, device, epochs, max_oop_activation,
+                             model_builder=model_builder, lr=lr)
     algorithm = NSGA2(
         pop_size=pop_size,
         sampling=MixedVariableSampling(),

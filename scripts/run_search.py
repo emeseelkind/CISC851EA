@@ -41,7 +41,22 @@ def main():
     p.add_argument("--max_oop_activation", type=float, default=0.15)
     p.add_argument("--device", default="cpu")
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--detector", choices=["pnf", "linear"], default="pnf",
+                    help="pnf = real ProstNFound+ mask decoder, warm-started from its trained "
+                         "weights (prostea/pnf_detector.py); linear = from-scratch 1x1 conv "
+                         "(prostea/model.py::LinearProbe), kept for comparison/debugging.")
+    p.add_argument("--lr", type=float, default=None,
+                    help="defaults to 1e-3 for --detector pnf (fine-tuning a pretrained "
+                         "transformer decoder; train_probe's old 1e-2 default, tuned for "
+                         "LinearProbe's from-scratch 1x1 conv, destroys the pretrained init "
+                         "within a few steps) or 1e-2 for --detector linear.")
     args = p.parse_args()
+
+    model_builder = None
+    if args.detector == "pnf":
+        from prostea.pnf_detector import build_pnf_detector
+        model_builder = build_pnf_detector
+    lr = args.lr if args.lr is not None else (1e-3 if args.detector == "pnf" else 1e-2)
 
     os.makedirs(args.exp_dir, exist_ok=True)
     cache = RegionCache(args.cache_dir)
@@ -56,6 +71,7 @@ def main():
         cache, fold["inner"],
         pop_size=args.pop_size, n_gen=args.n_gen, device=args.device,
         epochs=args.epochs, max_oop_activation=args.max_oop_activation, seed=args.seed,
+        model_builder=model_builder, lr=lr,
     )
     pareto = pareto_front_to_records(res)
     pareto.sort(key=lambda r: r["auc_cspca_max"], reverse=True)
@@ -81,7 +97,7 @@ def main():
     for name, genome in candidates.items():
         metrics = evaluate_genome(
             genome, cache, fold["outer_train"], fold["outer_test"],
-            device=args.device, epochs=args.epochs, seed=0,
+            device=args.device, epochs=args.epochs, seed=0, model_builder=model_builder, lr=lr,
         )
         held_out[name] = dict(genome=genome.as_dict(), metrics=metrics)
         print(f"[held-out test] {name}: auc_cspca_max={metrics.get('auc_cspca_max'):.3f} "

@@ -69,7 +69,9 @@ class GenomeLoss:
         # One conv call for the whole batch (every core shares the 64x64
         # grid) instead of one Python-level model(...) call per core.
         feats_batch = torch.stack([c["feats"] for c in cores])  # (B, Gh, Gw, D)
-        logits_batch = model(feats_batch)  # (B, Gh, Gw)
+        age_batch = torch.tensor([c["age"] for c in cores], dtype=torch.float32, device=feats_batch.device)
+        psa_batch = torch.tensor([c["psa"] for c in cores], dtype=torch.float32, device=feats_batch.device)
+        logits_batch = model(feats_batch, age=age_batch, psa=psa_batch)  # (B, Gh, Gw)
         probs_batch = torch.sigmoid(logits_batch)
 
         for core, logits, probs in zip(cores, logits_batch, probs_batch):

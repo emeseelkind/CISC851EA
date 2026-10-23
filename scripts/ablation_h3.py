@@ -45,7 +45,18 @@ def main():
     p.add_argument("--n_inner", type=int, default=4)
     p.add_argument("--epochs", type=int, default=8)
     p.add_argument("--device", default="cpu")
+    p.add_argument("--detector", choices=["pnf", "linear"], default="pnf",
+                    help="see scripts/run_search.py --detector; should match whichever "
+                         "detector built the h1_dir genomes being ablated here.")
+    p.add_argument("--lr", type=float, default=None,
+                    help="see scripts/run_search.py --lr; defaults to 1e-3 for pnf, 1e-2 for linear.")
     args = p.parse_args()
+
+    model_builder = None
+    if args.detector == "pnf":
+        from prostea.pnf_detector import build_pnf_detector
+        model_builder = build_pnf_detector
+    lr = args.lr if args.lr is not None else (1e-3 if args.detector == "pnf" else 1e-2)
 
     cache = RegionCache(args.cache_dir)
     nested = nested_patient_folds(cache.meta, n_outer=args.n_outer, n_inner=args.n_inner)
@@ -64,7 +75,7 @@ def main():
             genome = dataclasses.replace(base_genome, **overrides)
             metrics = evaluate_genome(
                 genome, cache, fold["outer_train"], fold["outer_test"],
-                device=args.device, epochs=args.epochs, seed=0,
+                device=args.device, epochs=args.epochs, seed=0, model_builder=model_builder, lr=lr,
             )
             metrics.update(fold=fold_idx, variant=variant_name,
                             w_negative=genome.w_negative, w_unlabeled=genome.w_unlabeled)

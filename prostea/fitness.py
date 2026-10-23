@@ -1,7 +1,15 @@
-"""One genome's fitness = train a fresh LinearProbe on a train split, score a
+"""One genome's fitness = train a fresh detector on a train split, score a
 val split. This is the function NSGA-II calls once per individual per
 generation (prostea/search.py); everything here operates on already-cached
 embeddings (prostea/region_cache.py), so it never touches the frozen encoder.
+
+`model_builder(d, device) -> nn.Module` picks the detector: defaults to
+model.py::LinearProbe (a from-scratch 1x1 conv) for backward compatibility
+and for tests/test_smoke.py's synthetic, medAI-free cache. The real scripts
+(run_search.py, ablation_h3.py) pass pnf_detector.py::build_pnf_detector,
+the real ProstNFound+ mask decoder warm-started from its trained weights --
+see pnf_detector.py's docstring for why that's a meaningfully different,
+more faithful trainable head than LinearProbe.
 """
 
 from __future__ import annotations
@@ -19,11 +27,13 @@ from prostea.region_cache import RegionCache
 ACTIVATION_THRESHOLD = 0.5
 
 
-def score_cores(model: LinearProbe, cores: list[dict], threshold: float = ACTIVATION_THRESHOLD) -> pd.DataFrame:
+def score_cores(model, cores: list[dict], threshold: float = ACTIVATION_THRESHOLD) -> pd.DataFrame:
     rows = []
     with torch.no_grad():
         feats_batch = torch.stack([c["feats"] for c in cores])
-        probs_batch = torch.sigmoid(model(feats_batch))
+        age_batch = torch.tensor([c["age"] for c in cores], dtype=torch.float32, device=feats_batch.device)
+        psa_batch = torch.tensor([c["psa"] for c in cores], dtype=torch.float32, device=feats_batch.device)
+        probs_batch = torch.sigmoid(model(feats_batch, age=age_batch, psa=psa_batch))
         for core, probs in zip(cores, probs_batch):
             weak_mask = core["needle_mask"] & core["prostate_mask"]
             negative_mask = ~core["prostate_mask"]
@@ -57,7 +67,8 @@ def train_probe(
     batch_size: int = 16,
     weight_decay: float = 1e-4,
     seed: int = 0,
-) -> LinearProbe:
+    model_builder=None,
+):
     rng = np.random.default_rng(seed)
     # `seed` previously only drove the numpy batch-order RNG above; the
     # LinearProbe's own init below drew from torch's uncontrolled global RNG,
@@ -65,7 +76,7 @@ def train_probe(
     # h1_fixed vs h1_v2 discrepancy -- same genome/split, different results).
     torch.manual_seed(seed)
     d = cache.load(int(train_idx[0]), device=device)["feats"].shape[-1]
-    model = LinearProbe(d).to(device)
+    model = (model_builder or (lambda d, device: LinearProbe(d).to(device)))(d, device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     loss_fn = GenomeLoss(genome)
 
@@ -90,12 +101,17 @@ def evaluate_genome(
     device: str = "cpu",
     epochs: int = 8,
     seed: int = 0,
+    model_builder=None,
+    lr: float = 1e-2,
 ) -> dict:
     """Trains on train_idx, scores val_idx. Returns a flat metrics dict:
     auc_cancer_max/mean, auc_cspca_max (H1's target metric), involvement_mae/
     corr, localization_consistency, out_of_prostate_activation, n.
     """
-    model = train_probe(genome, cache, train_idx, device=device, epochs=epochs, seed=seed)
+    model = train_probe(
+        genome, cache, train_idx, device=device, epochs=epochs, seed=seed,
+        model_builder=model_builder, lr=lr,
+    )
     val_cores = cache.load_many(val_idx, device=device)
     df = score_cores(model, val_cores)
 
@@ -122,13 +138,16 @@ def evaluate_genome_nested(
     inner_folds: list[tuple[np.ndarray, np.ndarray]],
     device: str = "cpu",
     epochs: int = 8,
+    model_builder=None,
+    lr: float = 1e-2,
 ) -> dict:
     """Fitness for the NSGA-II search: mean metrics over the inner folds of
     one outer-train set (see prostea/splits.py::nested_patient_folds). This
     is what shields the search from overfitting a single train/val split.
     """
     per_fold = [
-        evaluate_genome(genome, cache, tr, va, device=device, epochs=epochs, seed=i)
+        evaluate_genome(genome, cache, tr, va, device=device, epochs=epochs, seed=i,
+                         model_builder=model_builder, lr=lr)
         for i, (tr, va) in enumerate(inner_folds)
     ]
     # core_metrics() only adds involvement_mae/involvement_corr when a fold's

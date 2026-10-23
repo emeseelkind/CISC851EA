@@ -36,6 +36,8 @@ class CoreEntry:
     center: str
     grade_group: int
     involvement: float
+    age: float
+    psa: float
 
 
 class RegionCache:
@@ -82,6 +84,8 @@ class RegionCache:
             center=row.center,
             grade_group=int(row.grade_group),
             involvement=float(row.involvement),
+            age=float(row.age),
+            psa=float(row.psa),
         )
 
     def _load_from_disk(self, row_idx: int) -> dict:
@@ -93,6 +97,8 @@ class RegionCache:
             center=entry.center,
             grade_group=entry.grade_group,
             involvement=entry.involvement,
+            age=entry.age,
+            psa=entry.psa,
             feats=torch.from_numpy(npz["feats"].astype(np.float32)),
             needle_mask=torch.from_numpy(npz["needle_mask"] > 0),
             prostate_mask=torch.from_numpy(npz["prostate_mask"] > 0),
