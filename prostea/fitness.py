@@ -59,6 +59,11 @@ def train_probe(
     seed: int = 0,
 ) -> LinearProbe:
     rng = np.random.default_rng(seed)
+    # `seed` previously only drove the numpy batch-order RNG above; the
+    # LinearProbe's own init below drew from torch's uncontrolled global RNG,
+    # so two "identically seeded" runs could still diverge (observed as the
+    # h1_fixed vs h1_v2 discrepancy -- same genome/split, different results).
+    torch.manual_seed(seed)
     d = cache.load(int(train_idx[0]), device=device)["feats"].shape[-1]
     model = LinearProbe(d).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)

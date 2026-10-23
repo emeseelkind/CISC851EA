@@ -20,16 +20,26 @@ from protoprostate.metrics import core_metrics, per_center_metrics, safe_auc  # 
 
 
 def localization_consistency(df: pd.DataFrame) -> dict:
-    """df needs: grade_group, involvement, needle_activated_fraction (the
-    fraction of needle-region patches with predicted prob above a fixed
-    threshold -- see prostea/fitness.py::score_cores). Restricted to cancer
-    cores with known involvement, since benign cores have involvement=0 by
-    construction and would trivially inflate the correlation.
+    """df needs: grade_group, involvement, mean_density (mean predicted prob
+    over the needle region -- see prostea/fitness.py::score_cores).
+    Restricted to cancer cores with known involvement, since benign cores
+    have involvement=0 by construction and would trivially inflate the
+    correlation.
+
+    Uses mean_density (continuous) rather than needle_activated_fraction
+    (patches above a fixed 0.5 threshold): the latter collapses to a
+    constant -- corrcoef's denominator divides by zero, silently giving NaN
+    -- whenever a genome's needle-region outputs don't straddle 0.5 even
+    though they still vary enough to carry real signal (observed in
+    practice for several H3 ablation variants, e.g. experiments/h1_fixed
+    fold 0 "full"/"zero_negative": needle_activated_fraction was exactly
+    0.0 for every one of 55 cores, std=0, despite involvement varying
+    0.01-1.0). mean_density doesn't have that failure mode.
     """
     cancer = df[(df.grade_group > 0) & df.involvement.notna()]
-    if len(cancer) < 2 or cancer.involvement.std() == 0:
+    if len(cancer) < 2 or cancer.involvement.std() == 0 or cancer.mean_density.std() == 0:
         return {"localization_consistency": float("nan"), "n_localization": int(len(cancer))}
-    corr = np.corrcoef(cancer.needle_activated_fraction, cancer.involvement)[0, 1]
+    corr = np.corrcoef(cancer.mean_density, cancer.involvement)[0, 1]
     return {"localization_consistency": float(corr), "n_localization": int(len(cancer))}
 
 
