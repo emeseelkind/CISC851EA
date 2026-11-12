@@ -36,12 +36,10 @@ consistent heatmaps than hand-designed losses -- without any pixel-level histopa
   ~3 points won't clear that bar.
 - **H2** -- NSGA-II beats random search at equal budget (`scripts/random_search_baseline.py`
   samples the same number of genomes uniformly from the same space).
-- **H3** -- the out-of-prostate and PU/unlabeled-region terms improve the localization-consistency
-  proxy without hurting AUROC (ablate by zeroing `w_negative` / `w_unlabeled`).
 
 ## Results (so far)
 
-Real numbers now exist for all three hypotheses; none of this is final (see "Status" below for an
+Real numbers now exist for both hypotheses; none of this is final (see "Status" below for an
 in-progress rerun), but here's where it stands.
 
 **H1 -- mixed, not yet significant.** Pooling two independent H1 runs (`experiments/h1_fixed`,
@@ -57,18 +55,6 @@ fixes.
 **H2 -- same story, smaller n.** NSGA-II beats random search at equal budget in 3/5 folds (mean
 +0.010 csPCa AUROC, 90% of bootstrap resamples positive) -- directionally consistent, not
 significant at n=5 (`experiments/h2/`).
-
-**H3 -- not supported**, now that the ablation runs cleanly on all 5 folds x 4 variants
-(`experiments/h1_fixed/h3_ablation_v2.csv`; see "Status" for the metric bug this fixed).
-Localization-consistency is essentially flat across `full`/`zero_negative`/`zero_unlabeled`/
-`zero_both` (0.31-0.34 mean, no pattern) -- neither the out-of-prostate (`w_negative`) nor the
-PU/unlabeled (`w_unlabeled`) term measurably helps it. `w_unlabeled` does drive most of the ~2.5
-point AUROC gain (full/zero_negative ~0.74 vs. zero_unlabeled/zero_both ~0.72), but that comes at a
-real cost the hypothesis didn't anticipate: removing `w_unlabeled` roughly halves out-of-prostate
-activation (0.069 -> 0.036), i.e. that term is trading AUROC against out-of-prostate suppression,
-not helping localization-consistency alongside it. `w_negative` behaves as designed for suppressing
-out-of-prostate activation (removing it raises activation 0.069 -> 0.088) but costs nothing in
-AUROC and nothing in localization-consistency either.
 
 ## What this project cannot claim
 
@@ -161,9 +147,8 @@ python scripts/random_search_baseline.py --cache_dir cache/regions \
 
 All four of the original scaffolding steps are done -- `scripts/cache_regions.py` on a GPU node,
 `scripts/run_search.py` (H1, run 3x: `experiments/h1` (wrong baseline genome, see below),
-`experiments/h1_fixed`, `experiments/h1_v2`), the H2 random-search comparison (`experiments/h2/`),
-and the H3 ablation (`experiments/h1_fixed/h3_ablation_v2.csv`) -- see "Results" above for what
-they show.
+`experiments/h1_fixed`, `experiments/h1_v2`), and the H2 random-search comparison
+(`experiments/h2/`) -- see "Results" above for what they show.
 
 Two bugs found and fixed while reconciling/ablating those results:
 
@@ -178,15 +163,15 @@ Two bugs found and fixed while reconciling/ablating those results:
 2. **`prostea/metrics.py::localization_consistency` silently went NaN** whenever a genome's
    needle-region output didn't straddle `score_cores`'s fixed 0.5 threshold -- the binarized
    `needle_activated_fraction` it correlated against collapsed to a constant, and `corrcoef`
-   divided by zero. Fixed by correlating the continuous `mean_density` instead; the H3 ablation
-   went from 6/20 fold x variant cells NaN to 0/20. **This metric is also one of NSGA-II's two
-   search objectives** (`prostea/search.py:49`, NaN previously treated as the worst-case `0.0`), so
-   every `evolved_best` genome up through `h1_v2` was partly selected under the buggy version.
+   divided by zero. Fixed by correlating the continuous `mean_density` instead. **This metric is
+   also one of NSGA-II's two search objectives** (`prostea/search.py:49`, NaN previously treated
+   as the worst-case `0.0`), so every `evolved_best` genome up through `h1_v2` was partly selected
+   under the buggy version.
 
 `experiments/h1_v3` is an H1 rerun (all 5 outer folds) under the corrected metric, to get a search
 result that was actually selected on the right objective -- in progress as of 2026-10-23. Once it
-lands: rerun the H3 ablation against its genomes, and decide whether to treat it as the new
-canonical H1 result or add a second explicitly-seeded replicate of it for power (see "Results").
+lands: decide whether to treat it as the new canonical H1 result or add a second explicitly-seeded
+replicate of it for power (see "Results").
 
 Still not done: a literature search for prior work applying evolutionary loss/objective search to
 MIL or PU learning in prostate ultrasound, flagged from the start as a prerequisite "before
