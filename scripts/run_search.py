@@ -58,7 +58,17 @@ def main():
         model_builder = build_pnf_detector
     lr = args.lr if args.lr is not None else (1e-3 if args.detector == "pnf" else 1e-2)
 
-    os.makedirs(args.exp_dir, exist_ok=True)
+    # Namespace output under a per-outer-fold subdirectory derived from
+    # --outer_fold, rather than trusting the caller to pass a unique
+    # --exp_dir per fold: experiments/h1_pnf's 5 SLURM jobs (6804544-48,
+    # 2026-10-30) were all submitted with the same --exp_dir, so each
+    # overwrote the previous job's pareto_front.json/held_out_test.json and
+    # only the last-finishing fold's genomes survived (the held-out AUROC
+    # numbers were separately recovered from each job's own stdout log, but
+    # the genomes themselves -- needed e.g. to diagnose why one fold's
+    # evolved_best did much worse than the others -- were not recoverable).
+    exp_dir = os.path.join(args.exp_dir, f"fold{args.outer_fold}")
+    os.makedirs(exp_dir, exist_ok=True)
     cache = RegionCache(args.cache_dir)
     nested = nested_patient_folds(cache.meta, n_outer=args.n_outer, n_inner=args.n_inner)
     fold = nested[args.outer_fold]
@@ -75,10 +85,10 @@ def main():
     )
     pareto = pareto_front_to_records(res)
     pareto.sort(key=lambda r: r["auc_cspca_max"], reverse=True)
-    with open(os.path.join(args.exp_dir, "pareto_front.json"), "w") as f:
+    with open(os.path.join(exp_dir, "pareto_front.json"), "w") as f:
         json.dump(pareto, f, indent=2)
     print(f"[search] {len(pareto)} Pareto-optimal genomes -> "
-          f"{args.exp_dir}/pareto_front.json", flush=True)
+          f"{exp_dir}/pareto_front.json", flush=True)
 
     if not pareto:
         print("[search] empty Pareto front (all individuals infeasible under "
@@ -103,7 +113,7 @@ def main():
         print(f"[held-out test] {name}: auc_cspca_max={metrics.get('auc_cspca_max'):.3f} "
               f"localization_consistency={metrics.get('localization_consistency')}", flush=True)
 
-    with open(os.path.join(args.exp_dir, "held_out_test.json"), "w") as f:
+    with open(os.path.join(exp_dir, "held_out_test.json"), "w") as f:
         json.dump(held_out, f, indent=2)
 
 
